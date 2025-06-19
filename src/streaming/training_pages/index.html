@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EEG Trainer</title>
+    <link rel="stylesheet" href="./static/styles.css" />
+</head>
+
+<body>
+    <div class="container">
+        <h1>EEG Training Sample Interface</h1>
+        <p class="description">This tool will guide you through collecting brainwave data for different mental tasks
+            using your EEG headset. Make sure you are seated comfortably and ready to focus.</p>
+        <p>Try not to move your arms, hands or legs physically and only think about intending to move the relevant body
+            part when instructed.</p>
+
+        <div id="status-panel">
+            <p><strong>Status:</strong> <span id="status">Idle</span></p>
+            <p><strong>Current Task:</strong> <span id="task">N/A</span></p>
+            <p><strong>Trial:</strong> <span id="trial">0</span></p>
+            <p><strong>Countdown:</strong> <span id="countdown">0.0</span> seconds</p>
+        </div>
+
+        <button id="start-button">Start Training Sampling</button>
+    </div>
+
+    <script src="../static/script.js"></script>
+</body>
+
+</html>

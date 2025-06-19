@@ -1,0 +1,67 @@
+body {
+    margin: 0;
+    font-family: 'Courier New', Courier, monospace;
+    background-color: #000;
+    color: #0f0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+  }
+  
+  .container {
+    max-width: 700px;
+    padding: 40px;
+    background: rgba(0, 255, 0, 0.1);
+    border: 2px solid #0f0;
+    border-radius: 10px;
+    box-shadow: 0 0 20px #0f0;
+    text-align: center;
+    animation: fadeIn 1.5s ease;
+  }
+  
+  h1 {
+    font-size: 2em;
+    margin-bottom: 10px;
+    animation: pulse 1.5s infinite;
+  }
+  
+  .description {
+    font-size: 1em;
+    margin-bottom: 20px;
+    animation: fadeIn 2s ease;
+  }
+  
+  #status-panel p {
+    font-size: 1.1em;
+    margin: 10px 0;
+    animation: fadeIn 2.5s ease;
+  }
+  
+  button {
+    margin-top: 20px;
+    padding: 12px 24px;
+    font-size: 1em;
+    background-color: #0f0;
+    color: #000;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+  }
+  
+  button:hover {
+    background-color: #0c0;
+    transform: scale(1.05);
+  }
+  
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  
+  @keyframes pulse {
+    0%, 100% { text-shadow: 0 0 5px #0f0; }
+    50% { text-shadow: 0 0 15px #0f0; }
+  }
+  
