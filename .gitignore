@@ -1,4 +1,7 @@
 venv/
 ENV/
 env/
-.venv/
+data/raw/*
+data/model/*
+data/processed/*
+test_output/*

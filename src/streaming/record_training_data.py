@@ -11,14 +11,25 @@ try:
     from pylsl import StreamInlet, resolve_byprop
 except ImportError:
     StreamInlet = None
-    
 
 # Configuration settings
 CLASSES = ["rest", "left_hand", "right_hand", "leg_movement", "both_hands"]
 RECORD_SECONDS = 5  # Duration of each trial in seconds
 NUM_TRIALS_PER_CLASS = 10  # Number of recordings per class
-SAMPLE_RATE = 250  # Expected sample rate from the EEG device
-TARGET_CHANNELS = ['C3', 'C4', 'Cz', 'FCz', 'CPz', 'Fz', 'Pz', 'Oz']
+SAMPLE_RATE = 500  # Expected sample rate from the EEG device
+
+# Array-based channel indices that match the target EEG channels:
+# Index : Channel Name
+# 14    : C3
+# 15    : C4
+# 16    : Cz
+# 41    : FCz
+# 62    : CPz
+# 5     : Fz
+# 25    : Pz
+# 31    : Oz
+# grnd and cpz are needed for impedence testing
+TARGET_CHANNEL_INDICES = [14, 15, 16, 41, 62, 5, 25, 31]
 # C3/C4: hand motor areas, Cz: foot/leg control, FCz: motor planning/intention,
 # CPz: sensorimotor integration, Fz: attention/intention, Pz: cognitive control, Oz: resting/focus state
 
@@ -40,7 +51,6 @@ def generate_save_path(base_dir, is_emulation=False):
 # Resolve and prepare the appropriate save directory for this session
 BASE_DIR = "data/raw"
 
-
 # Flask app for local web interface
 app = Flask(__name__, template_folder='training_pages')
 
@@ -52,23 +62,11 @@ recording_data = {
     'countdown': 0.0
 }
 
-def find_channel_indices(inlet):
-    # Map target channel labels to their indices in the stream
-    info = inlet.info()
-    indices = []
-    channel = info.desc().child("channels").child("channel")
-    for i in range(info.channel_count()):
-        label = channel.child_value("label")
-        if label in TARGET_CHANNELS:
-            indices.append(i)
-        channel = channel.next_sibling()
-    return indices
-
 def record_trials():
     SAVE_DIR = generate_save_path(BASE_DIR, is_emulation=SINGLE_SAMPLE_PER_CLASS)
     # Connect to EEG stream via LSL (if not in test mode)
     inlet = None
-    channel_indices = list(range(len(TARGET_CHANNELS)))  # Dummy if in test mode
+    channel_indices = list(range(len(TARGET_CHANNEL_INDICES)))  # Dummy if in test mode
 
     if not TEST_MODE:
         print("Looking for EEG stream...")
@@ -76,7 +74,7 @@ def record_trials():
         if not streams:
             raise RuntimeError("No EEG stream found. Ensure your EEG device is streaming over LSL.")
         inlet = StreamInlet(streams[0])
-        channel_indices = find_channel_indices(inlet)
+        channel_indices = TARGET_CHANNEL_INDICES  # Use fixed channel indices instead of dynamic label resolution
 
     # Loop through each mental task
     for class_label in CLASSES:
@@ -103,7 +101,7 @@ def record_trials():
                     sample = np.random.randn(len(channel_indices))
                 else:
                     sample, _ = inlet.pull_sample()
-                    sample = [sample[i] for i in channel_indices]
+                    sample = [sample[i] for i in channel_indices]  # Extract only the selected EEG channel values
                 samples.append(sample)
                 time.sleep(1.0 / SAMPLE_RATE)
 
@@ -145,7 +143,6 @@ def reset():
     recording_data['trial'] = 0
     recording_data['countdown'] = 0.0
     return '', 204
-
 
 if __name__ == '__main__':
     import webbrowser
