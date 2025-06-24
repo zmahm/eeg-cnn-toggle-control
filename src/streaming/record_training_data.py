@@ -21,17 +21,15 @@ SAMPLE_RATE = 500  # Expected sample rate from the EEG device
 # Array-based channel indices that match the target EEG channels:
 # Index : Channel Name
 # 14    : C3
-# 15    : C4
-# 16    : Cz
+# 15    : Cz
+# 16    : C4
+# 40    : FC3
 # 41    : FCz
-# 62    : CPz
-# 5     : Fz
-# 25    : Pz
-# 31    : Oz
+# 42    : FC4
+# 47    : CP3
+# 48    : CP4
 # grnd and cpz are needed for impedence testing
-TARGET_CHANNEL_INDICES = [14, 15, 16, 41, 62, 5, 25, 31]
-# C3/C4: hand motor areas, Cz: foot/leg control, FCz: motor planning/intention,
-# CPz: sensorimotor integration, Fz: attention/intention, Pz: cognitive control, Oz: resting/focus state
+TARGET_CHANNEL_INDICES = [14, 15, 16, 40, 41, 42, 47, 48]
 
 TEST_MODE = False  # Set to False when using a real EEG device
 SINGLE_SAMPLE_PER_CLASS = False  # If True, only one sample will be recorded per class (for emulation/testing)
@@ -72,7 +70,7 @@ def record_trials():
         print("Looking for EEG stream...")
         streams = resolve_byprop('type', 'EEG', timeout=5)
         if not streams:
-            raise RuntimeError("No EEG stream found. Ensure your EEG device is streaming over LSL.")
+            raise RuntimeError("No EEG stream found. Ensure EEG device is streaming over LSL.")
         inlet = StreamInlet(streams[0])
         channel_indices = TARGET_CHANNEL_INDICES  # Use fixed channel indices instead of dynamic label resolution
 
@@ -91,22 +89,18 @@ def record_trials():
             samples = []
             print(f"Recording trial {trial+1}/{num_trials} for class '{class_label}'")
 
-            # Record EEG data for fixed duration with live countdown
-            start_time = time.time()
-            while time.time() - start_time < RECORD_SECONDS:
-                elapsed = time.time() - start_time
-                recording_data['countdown'] = max(0, RECORD_SECONDS - elapsed)
-
+            num_samples = SAMPLE_RATE * RECORD_SECONDS
+            while len(samples) < num_samples:
                 if TEST_MODE:
                     sample = np.random.randn(len(channel_indices))
                 else:
                     sample, _ = inlet.pull_sample()
-                    sample = [sample[i] for i in channel_indices]  # Extract only the selected EEG channel values
+                    sample = [sample[i] for i in channel_indices]
                 samples.append(sample)
-                time.sleep(1.0 / SAMPLE_RATE)
 
-            samples = np.array(samples)
 
+            samples = np.array(samples,dtype=np.float32)
+            print("Saved sample shape:", samples.shape)
             # Save trial data to file
             filename = f"{class_label}_trial{trial+1}.npy"
             filepath = os.path.join(SAVE_DIR, filename)

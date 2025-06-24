@@ -15,6 +15,10 @@ STEP_SIZE_SECONDS = 1
 WINDOW_SIZE = int(WINDOW_SIZE_SECONDS * SAMPLE_RATE)
 STEP_SIZE = int(STEP_SIZE_SECONDS * SAMPLE_RATE)
 
+# Minimum acceptable length for any trial (e.g. 1 full window)
+MIN_REQUIRED_SAMPLES = WINDOW_SIZE
+
+
 def bandpass_filter(data, lowcut=0.5, highcut=40, fs=SAMPLE_RATE, order=5):
     # Apply a Butterworth bandpass filter to remove noise outside EEG range
     nyq = 0.5 * fs
@@ -40,8 +44,12 @@ def window_data(data, window_size, step_size):
 def preprocess_recordings(folder_name):
     # Define input and output paths relative to the script location
     script_dir = Path(__file__).resolve().parent
-    raw_dir = script_dir / '../../data/raw' / folder_name
-    save_dir = script_dir / '../../data/processed/training' / folder_name
+    raw_dir = (script_dir / '../../data/raw/training' / folder_name).resolve()
+    print(raw_dir)
+    save_dir = (script_dir / '../../data/processed/training' / folder_name).resolve()
+    for file in raw_dir.glob("*.npy"):
+        data = np.load(file)
+        print(f"{file.name}: shape {data.shape}")
 
     # Create output directory if it doesn't exist
     save_dir.mkdir(parents=True, exist_ok=True)
@@ -51,12 +59,21 @@ def preprocess_recordings(folder_name):
 
     # Loop over all .npy files in the folder
     for file in sorted(raw_dir.glob("*.npy")):
-        data = np.load(file)  # Load EEG data from file
+        print(f"Found file: {file.name}")
+        data = np.load(file)
+
+        if data.shape[0] < MIN_REQUIRED_SAMPLES:
+            print(f"Skipping {file.name}: only {data.shape[0]} samples (need at least {MIN_REQUIRED_SAMPLES})")
+            continue
 
         # Apply preprocessing steps
         filtered = bandpass_filter(data)
         normed = normalise(filtered)
         segments = window_data(normed, WINDOW_SIZE, STEP_SIZE)
+
+        if len(segments) == 0:
+            print(f"Skipping {file.name}: no valid segments produced after windowing")
+            continue
 
         # Extract label from filename (e.g. 'left_hand_trial1.npy')
         label = file.stem.split('_trial')[0]
@@ -67,17 +84,22 @@ def preprocess_recordings(folder_name):
 
         print(f"Processed {file.name} → {len(segments)} segments")
 
-    # Save preprocessed data and labels
+    if not all_segments:
+        print("No valid data found. Exiting.")
+        return
+
     all_trials_array = np.array(all_segments, dtype=np.float32)
-    print("Final shape before saving:", all_trials_array.shape)  # data existence check
+    labels_array = np.array(labels)
+
+    print("Final shape before saving:", all_trials_array.shape)
     np.save(save_dir / 'preprocessed_data.npy', all_trials_array)
-    np.save(save_dir / 'labels.npy', np.array(labels))
+    np.save(save_dir / 'labels.npy', labels_array)
     print(f"Saved preprocessed dataset to: {save_dir}")
 
 if __name__ == "__main__":
     import argparse
 
-    # Allow user to input the folder name
+    # Allows to input the folder name
     parser = argparse.ArgumentParser()
     parser.add_argument("folder", help="Name of the recording folder inside data/raw")
     args = parser.parse_args()
