@@ -6,7 +6,7 @@ from threading import Thread
 from flask import Flask, render_template, jsonify, request
 from datetime import datetime
 
-# Optional LSL import (handled later)
+# Optional LSL import (only used if not in test mode)
 try:
     from pylsl import StreamInlet, resolve_byprop
 except ImportError:
@@ -14,9 +14,8 @@ except ImportError:
 
 # Configuration settings
 CLASSES = ["rest", "left_hand", "right_hand", "leg_movement", "both_hands"]
-RECORD_SECONDS = 5  # Duration of each trial in seconds
-NUM_TRIALS_PER_CLASS = 10  # Number of recordings per class
-SAMPLE_RATE = 500  # Expected sample rate from the EEG device
+SAMPLES_PER_TRIAL = 60000  # 2 minutes at 500 Hz (estimated)
+NUM_TRIALS_PER_CLASS = 1  # One trial per class (allows for more windowing)
 
 # Array-based channel indices that match the target EEG channels:
 # Index : Channel Name
@@ -32,17 +31,15 @@ SAMPLE_RATE = 500  # Expected sample rate from the EEG device
 TARGET_CHANNEL_INDICES = [14, 15, 16, 40, 41, 42, 47, 48]
 
 TEST_MODE = False  # Set to False when using a real EEG device
-SINGLE_SAMPLE_PER_CLASS = False  # If True, only one sample will be recorded per class (for emulation/testing)
 
-# Function to generate the proper save directory based on mode and timestamp
-def generate_save_path(base_dir, is_emulation=False):
+# Function to generate the proper save directory based on timestamp
+
+def generate_save_path(base_dir):
     """
-    Create a time-stamped subdirectory under 'training' or 'emulate',
-    depending on whether full training or a single-sample emulation run is being performed.
+    Create a time-stamped subdirectory under 'training' for this session.
     """
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    subfolder = "emulate" if is_emulation else "training"
-    path = os.path.join(base_dir, subfolder, timestamp)
+    path = os.path.join(base_dir, "training", timestamp)
     os.makedirs(path, exist_ok=True)
     return path
 
@@ -61,10 +58,9 @@ recording_data = {
 }
 
 def record_trials():
-    SAVE_DIR = generate_save_path(BASE_DIR, is_emulation=SINGLE_SAMPLE_PER_CLASS)
-    # Connect to EEG stream via LSL (if not in test mode)
+    SAVE_DIR = generate_save_path(BASE_DIR)
     inlet = None
-    channel_indices = list(range(len(TARGET_CHANNEL_INDICES)))  # Dummy if in test mode
+    channel_indices = list(range(len(TARGET_CHANNEL_INDICES)))  # Dummy fallback if in test mode
 
     if not TEST_MODE:
         print("Looking for EEG stream...")
@@ -72,25 +68,21 @@ def record_trials():
         if not streams:
             raise RuntimeError("No EEG stream found. Ensure EEG device is streaming over LSL.")
         inlet = StreamInlet(streams[0])
-        channel_indices = TARGET_CHANNEL_INDICES  # Use fixed channel indices instead of dynamic label resolution
+        channel_indices = TARGET_CHANNEL_INDICES
 
-    # Loop through each mental task
     for class_label in CLASSES:
         print(f"\nTask: {class_label}")
         print("Get ready to focus on the mental task when prompted.")
         time.sleep(3)
 
-        # Determine number of trials based on SINGLE_SAMPLE_PER_CLASS
-        num_trials = 1 if SINGLE_SAMPLE_PER_CLASS else NUM_TRIALS_PER_CLASS
         recording_data['current_class'] = class_label
 
-        for trial in range(num_trials):
+        for trial in range(NUM_TRIALS_PER_CLASS):
             recording_data['trial'] = trial + 1
             samples = []
-            print(f"Recording trial {trial+1}/{num_trials} for class '{class_label}'")
+            print(f"Recording trial {trial+1}/{NUM_TRIALS_PER_CLASS} for class '{class_label}'")
 
-            num_samples = SAMPLE_RATE * RECORD_SECONDS
-            while len(samples) < num_samples:
+            while len(samples) < SAMPLES_PER_TRIAL:
                 if TEST_MODE:
                     sample = np.random.randn(len(channel_indices))
                 else:
@@ -98,16 +90,15 @@ def record_trials():
                     sample = [sample[i] for i in channel_indices]
                 samples.append(sample)
 
-
-            samples = np.array(samples,dtype=np.float32)
+            samples = np.array(samples, dtype=np.float32)
             print("Saved sample shape:", samples.shape)
-            # Save trial data to file
+
+            # Save the recorded trial to file
             filename = f"{class_label}_trial{trial+1}.npy"
             filepath = os.path.join(SAVE_DIR, filename)
             np.save(filepath, samples)
-
             print(f"Trial {trial+1} saved as: {filename}")
-            time.sleep(1)  # Small pause before next trial
+            time.sleep(1)
 
     recording_data['status'] = 'completed'
     print("\nAll recordings completed.")
@@ -131,7 +122,7 @@ def start():
 
 @app.route('/reset', methods=['POST'])
 def reset():
-    # Reset all status values so a new session can be started
+    # Reset status so a new session can be started
     recording_data['status'] = 'idle'
     recording_data['current_class'] = ''
     recording_data['trial'] = 0

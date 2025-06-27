@@ -63,13 +63,13 @@ class SimpleEEG1DCNN(nn.Module):
         return self.fc2(x)
 
 # Training loop including confusion matrix evaluation after final epoch
-def train_model(data_folder, num_epochs=30, batch_size=32, learning_rate=0.001):
+def train_model(data_folder, num_epochs=60, batch_size=8, learning_rate=0.001):
     dataset = EEGDataset(data_folder)
     num_classes = len(dataset.class_names)
     input_channels = dataset.data.shape[1]
 
     # 80/20 split for training and validation
-    val_size = int(0.2 * len(dataset))
+    val_size = int(0.4 * len(dataset))
     train_size = len(dataset) - val_size
     train_set, val_set = random_split(dataset, [train_size, val_size])
 
