@@ -51,25 +51,26 @@ class SimpleEEG1DCNN(nn.Module):
         self.relu2 = nn.ReLU()
         self.pool2 = nn.MaxPool1d(kernel_size=2)
 
-        self.fc1 = nn.LazyLinear(128)  # Automatically infers input size
+        self.global_pool = nn.AdaptiveAvgPool1d(1)  # Reduces time dimension to 1
         self.dropout = nn.Dropout(0.5)
-        self.fc2 = nn.Linear(128, n_classes)
+        self.fc2 = nn.Linear(64, n_classes)
 
     def forward(self, x):
         x = self.pool1(self.relu1(self.bn1(self.conv1(x))))
         x = self.pool2(self.relu2(self.bn2(self.conv2(x))))
-        x = x.view(x.size(0), -1)
-        x = self.dropout(self.fc1(x))
+        x = self.global_pool(x)  # shape: (batch_size, 64, 1)
+        x = x.squeeze(-1)        # shape: (batch_size, 64)
+        x = self.dropout(x)
         return self.fc2(x)
 
 # Training loop including confusion matrix evaluation after final epoch
-def train_model(data_folder, num_epochs=60, batch_size=8, learning_rate=0.001):
+def train_model(data_folder, num_epochs=60, batch_size=8, learning_rate=0.01):
     dataset = EEGDataset(data_folder)
     num_classes = len(dataset.class_names)
     input_channels = dataset.data.shape[1]
 
     # 80/20 split for training and validation
-    val_size = int(0.4 * len(dataset))
+    val_size = int(0.2 * len(dataset))
     train_size = len(dataset) - val_size
     train_set, val_set = random_split(dataset, [train_size, val_size])
 

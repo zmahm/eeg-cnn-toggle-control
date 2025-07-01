@@ -9,7 +9,7 @@ SAMPLE_RATE = 500
 
 # Duration and step of each processing window in seconds
 WINDOW_SIZE_SECONDS = 2
-STEP_SIZE_SECONDS = 1
+STEP_SIZE_SECONDS = 0.5  # 250 samples = 50% overlap at 2s window
 
 # Compute the number of samples per window and step
 WINDOW_SIZE = int(WINDOW_SIZE_SECONDS * SAMPLE_RATE)
