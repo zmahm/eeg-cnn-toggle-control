@@ -9,146 +9,160 @@ from pathlib import Path
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 import matplotlib.pyplot as plt
 
-# Dataset class for loading preprocessed EEG segments
+# Loads EEG segment data and converts string labels to numeric format
 class EEGDataset(Dataset):
-    def __init__(self, data_path):
-        full_data = np.load(data_path / 'preprocessed_data.npy')
-        raw_labels = np.load(data_path / 'labels.npy')
+    def __init__(self, data_directory):
+        eeg_data = np.load(data_directory / 'preprocessed_data.npy')
+        label_strings = np.load(data_directory / 'labels.npy')
 
-        print("Loaded preprocessed shape:", full_data.shape)
-        print("Labels shape:", raw_labels.shape)
-        print("Dtype:", full_data.dtype)
+        print("Loaded preprocessed shape:", eeg_data.shape)
+        print("Labels shape:", label_strings.shape)
+        print("Dtype:", eeg_data.dtype)
 
-        self.data = torch.tensor(full_data, dtype=torch.float32)
+        self.samples = torch.tensor(eeg_data, dtype=torch.float32)
 
-        # Convert string class names to numerical indices for training
-        self.class_names = sorted(set(raw_labels))  # Ensures consistent label ordering
+        self.class_names = sorted(set(label_strings))
         self.class_to_index = {label: idx for idx, label in enumerate(self.class_names)}
         self.index_to_class = {idx: label for label, idx in self.class_to_index.items()}
 
-        # Map each string label to its corresponding integer index
-        numeric_labels = [self.class_to_index[label] for label in raw_labels]
+        numeric_labels = [self.class_to_index[label] for label in label_strings]
         self.labels = torch.tensor(numeric_labels, dtype=torch.long)
 
     def __len__(self):
-        return len(self.data)
+        return len(self.samples)
 
-    def __getitem__(self, idx):
-        return self.data[idx], self.labels[idx]
+    def __getitem__(self, index):
+        return self.samples[index], self.labels[index]
 
-# A simple 1D CNN designed to classify EEG time-series data
-class SimpleEEG1DCNN(nn.Module):
-    def __init__(self, in_channels, n_classes):
-        super(SimpleEEG1DCNN, self).__init__()
+# A basic 1D CNN model designed for EEG sequence classification
+class EEGClassifier1DCNN(nn.Module):
+    def __init__(self, input_channels, num_classes):
+        super(EEGClassifier1DCNN, self).__init__()
 
-        self.conv1 = nn.Conv1d(in_channels, 32, kernel_size=5, padding=2)
-        self.bn1 = nn.BatchNorm1d(32)
-        self.relu1 = nn.ReLU()
-        self.pool1 = nn.MaxPool1d(kernel_size=2)
+        self.conv_layer_1 = nn.Conv1d(input_channels, 32, kernel_size=5, padding=2)
+        self.batch_norm_1 = nn.BatchNorm1d(32)
+        self.activation_1 = nn.ReLU()
+        self.max_pool_1 = nn.MaxPool1d(kernel_size=2)
 
-        self.conv2 = nn.Conv1d(32, 64, kernel_size=3, padding=1)
-        self.bn2 = nn.BatchNorm1d(64)
-        self.relu2 = nn.ReLU()
-        self.pool2 = nn.MaxPool1d(kernel_size=2)
+        self.conv_layer_2 = nn.Conv1d(32, 64, kernel_size=3, padding=1)
+        self.batch_norm_2 = nn.BatchNorm1d(64)
+        self.activation_2 = nn.ReLU()
+        self.max_pool_2 = nn.MaxPool1d(kernel_size=2)
 
-        self.global_pool = nn.AdaptiveAvgPool1d(1)  # Reduces time dimension to 1
+        self.global_avg_pool = nn.AdaptiveAvgPool1d(1)  # Collapse time dimension
         self.dropout = nn.Dropout(0.5)
-        self.fc2 = nn.Linear(64, n_classes)
+        self.output_layer = nn.Linear(64, num_classes)
 
-    def forward(self, x):
-        x = self.pool1(self.relu1(self.bn1(self.conv1(x))))
-        x = self.pool2(self.relu2(self.bn2(self.conv2(x))))
-        x = self.global_pool(x)  # shape: (batch_size, 64, 1)
-        x = x.squeeze(-1)        # shape: (batch_size, 64)
-        x = self.dropout(x)
-        return self.fc2(x)
+    def forward(self, input_sequence):
+        output = self.conv_layer_1(input_sequence)
+        output = self.batch_norm_1(output)
+        output = self.activation_1(output)
+        output = self.max_pool_1(output)
 
-# Training loop including confusion matrix evaluation after final epoch
-def train_model(data_folder, num_epochs=60, batch_size=8, learning_rate=0.01):
-    dataset = EEGDataset(data_folder)
+        output = self.conv_layer_2(output)
+        output = self.batch_norm_2(output)
+        output = self.activation_2(output)
+        output = self.max_pool_2(output)
+
+        output = self.global_avg_pool(output)   
+        output = output.squeeze(-1)             
+        output = self.dropout(output)
+        predictions = self.output_layer(output)
+        return predictions
+
+# Trains the 1D CNN model on EEG data and evaluates on a validation split
+def train_eeg_cnn_model(processed_data_dir, num_epochs=60, batch_size=4, learning_rate=0.01):
+    dataset = EEGDataset(processed_data_dir)
     num_classes = len(dataset.class_names)
-    input_channels = dataset.data.shape[1]
+    input_channels = dataset.samples.shape[1]
 
-    # 80/20 split for training and validation
-    val_size = int(0.2 * len(dataset))
-    train_size = len(dataset) - val_size
-    train_set, val_set = random_split(dataset, [train_size, val_size])
+    # Split into training and validation sets
+    validation_size = int(0.2 * len(dataset))
+    training_size = len(dataset) - validation_size
+    training_set, validation_set = random_split(dataset, [training_size, validation_size])
 
-    train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(val_set, batch_size=batch_size)
+    training_loader = DataLoader(training_set, batch_size=batch_size, shuffle=True)
+    validation_loader = DataLoader(validation_set, batch_size=batch_size)
 
-    model = SimpleEEG1DCNN(in_channels=input_channels, n_classes=num_classes)
+    model = EEGClassifier1DCNN(input_channels=input_channels, num_classes=num_classes)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
-    criterion = nn.CrossEntropyLoss()
+    loss_function = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
     for epoch in range(num_epochs):
         model.train()
-        total_loss = 0
-        for X, y in train_loader:
-            X, y = X.to(device), y.to(device)
+        total_epoch_loss = 0
+
+        for batch_data, batch_labels in training_loader:
+            batch_data, batch_labels = batch_data.to(device), batch_labels.to(device)
+
             optimizer.zero_grad()
-            outputs = model(X)
-            loss = criterion(outputs, y)
+            logits = model(batch_data)
+            loss = loss_function(logits, batch_labels)
             loss.backward()
             optimizer.step()
-            total_loss += loss.item()
 
-        # Evaluate on validation set
+            total_epoch_loss += loss.item()
+
+        # Evaluate model performance on validation data
         model.eval()
-        correct = 0
-        total = 0
-        all_preds = []
-        all_targets = []
+        total_correct = 0
+        total_samples = 0
+        predictions_list = []
+        targets_list = []
 
         with torch.no_grad():
-            for X, y in val_loader:
-                X, y = X.to(device), y.to(device)
-                outputs = model(X)
-                _, predicted = torch.max(outputs, 1)
-                total += y.size(0)
-                correct += (predicted == y).sum().item()
-                all_preds.extend(predicted.cpu().numpy())
-                all_targets.extend(y.cpu().numpy())
+            for validation_data, validation_labels in validation_loader:
+                validation_data, validation_labels = validation_data.to(device), validation_labels.to(device)
 
-        accuracy = 100 * correct / total
-        print(f"Epoch {epoch+1}/{num_epochs}, Loss: {total_loss:.4f}, Val Acc: {accuracy:.2f}%")
+                validation_logits = model(validation_data)
+                _, predicted_labels = torch.max(validation_logits, 1)
 
-    # After training, compute and show confusion matrix for final validation
-    cm = confusion_matrix(all_targets, all_preds)
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=dataset.class_names)
+                total_samples += validation_labels.size(0)
+                total_correct += (predicted_labels == validation_labels).sum().item()
+
+                predictions_list.extend(predicted_labels.cpu().numpy())
+                targets_list.extend(validation_labels.cpu().numpy())
+
+        validation_accuracy = 100 * total_correct / total_samples
+        print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {total_epoch_loss:.4f}, Val Acc: {validation_accuracy:.2f}%")
+
+    # Display confusion matrix after final epoch
+    confusion_mat = confusion_matrix(targets_list, predictions_list)
+    disp = ConfusionMatrixDisplay(confusion_matrix=confusion_mat, display_labels=dataset.class_names)
     disp.plot(cmap='Blues', xticks_rotation=45)
     plt.title("Validation Confusion Matrix (Final Epoch)")
     plt.tight_layout()
     plt.show()
 
-    model_path = data_folder / 'eeg_1dcnn_model.pth'
-    torch.save(model.state_dict(), model_path)
-    print(f"Model saved to {model_path}")
+    model_output_path = processed_data_dir / 'eeg_1dcnn_model.pth'
+    torch.save(model.state_dict(), model_output_path)
+    print(f"Model saved to {model_output_path}")
 
+# Main entry point: prepares paths and starts training
 if __name__ == '__main__':
     if len(sys.argv) < 2:
         print("Usage: python torch_baseline_model_gen.py <recording_folder_name>")
         sys.exit(1)
 
-    folder_name = sys.argv[1]
+    recording_folder = sys.argv[1]
+    base_directory = Path(__file__).resolve().parent.parent.parent
 
-    base_dir = Path(__file__).resolve().parent.parent.parent
-    processed_path = base_dir / 'data' / 'processed' / 'training' / folder_name
-    model_output_path = base_dir / 'data' / 'model' / folder_name
+    input_data_path = base_directory / 'data' / 'processed' / 'training' / recording_folder
+    output_model_path = base_directory / 'data' / 'model' / recording_folder
 
-    if not processed_path.exists():
-        print(f"Error: folder '{processed_path}' does not exist.")
+    if not input_data_path.exists():
+        print(f"Error: folder '{input_data_path}' does not exist.")
         sys.exit(1)
 
-    os.makedirs(model_output_path, exist_ok=True)
+    os.makedirs(output_model_path, exist_ok=True)
 
-    train_model(processed_path)
+    train_eeg_cnn_model(input_data_path)
 
-    model_file = processed_path / 'eeg_1dcnn_model.pth'
-    destination_file = model_output_path / 'eeg_1dcnn_model.pth'
-    os.replace(model_file, destination_file)
+    trained_model_file = input_data_path / 'eeg_1dcnn_model.pth'
+    final_destination = output_model_path / 'eeg_1dcnn_model.pth'
+    os.replace(trained_model_file, final_destination)
 
-    print(f"Model moved to {destination_file}")
+    print(f"Model moved to {final_destination}")
