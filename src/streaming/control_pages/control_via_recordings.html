@@ -1,10 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <title>EEG Model Control Interface</title>
   <link rel="stylesheet" href="/static/styles.css">
 </head>
+
 <body>
   <div class="container">
     <h1>EEG Model Control</h1>
@@ -13,7 +15,7 @@
     <label for="model-select">Select Model:</label>
     <select id="model-select">
       {% for model in model_folders %}
-        <option value="{{ model }}">{{ model }}</option>
+      <option value="{{ model }}">{{ model }}</option>
       {% endfor %}
     </select>
     <button id="load-model">Load Model</button>
@@ -23,6 +25,7 @@
       <p><strong>Connected to WebSocket:</strong> <span id="ws-status">Not Connected</span></p>
       <p><strong>Current Servo:</strong> <span id="servo-index">0</span></p>
       <p><strong>Servo 3 State:</strong> <span id="servo3-state">min</span></p>
+      <p><strong>Model Prediction:</strong> <span id="current-prediction">None</span></p>
     </div>
 
     <div class="controls">
@@ -31,8 +34,11 @@
       <button data-action="right_hand">Right Hand</button>
       <button data-action="both_hands">Both Hands</button>
     </div>
+    
 
-    <div id="console-output" style="margin-top: 30px; text-align: left; background-color: rgba(0,255,0,0.05); padding: 10px; border: 1px solid #0f0; height: 200px; overflow-y: auto; font-size: 0.9em;">
+
+    <div id="console-output"
+      style="margin-top: 30px; text-align: left; background-color: rgba(0,255,0,0.05); padding: 10px; border: 1px solid #0f0; height: 200px; overflow-y: auto; font-size: 0.9em;">
       <strong>Console Log:</strong>
       <pre id="log-area"></pre>
     </div>
@@ -40,4 +46,5 @@
     <script src="/static/control_via_recordings.js"></script>
   </div>
 </body>
+
 </html>

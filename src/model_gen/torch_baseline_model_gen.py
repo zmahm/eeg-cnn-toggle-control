@@ -32,26 +32,28 @@ class EEGDataset(Dataset):
         return len(self.samples)
 
     def __getitem__(self, index):
-        return self.samples[index], self.labels[index]
+        sample = self.samples[index].transpose(0, 1)  # (1000, 8) → (8, 1000)
+        return sample, self.labels[index]
+
 
 # A basic 1D CNN model designed for EEG sequence classification
 class EEGClassifier1DCNN(nn.Module):
     def __init__(self, input_channels, num_classes):
         super(EEGClassifier1DCNN, self).__init__()
 
-        self.conv_layer_1 = nn.Conv1d(input_channels, 32, kernel_size=5, padding=2)
-        self.batch_norm_1 = nn.BatchNorm1d(32)
+        self.conv_layer_1 = nn.Conv1d(input_channels, 8, kernel_size=5, padding=2)
+        self.batch_norm_1 = nn.BatchNorm1d(8)
         self.activation_1 = nn.ReLU()
         self.max_pool_1 = nn.MaxPool1d(kernel_size=2)
 
-        self.conv_layer_2 = nn.Conv1d(32, 64, kernel_size=3, padding=1)
-        self.batch_norm_2 = nn.BatchNorm1d(64)
+        self.conv_layer_2 = nn.Conv1d(8, 16, kernel_size=3, padding=1)
+        self.batch_norm_2 = nn.BatchNorm1d(16)
         self.activation_2 = nn.ReLU()
         self.max_pool_2 = nn.MaxPool1d(kernel_size=2)
 
         self.global_avg_pool = nn.AdaptiveAvgPool1d(1)  # Collapse time dimension
         self.dropout = nn.Dropout(0.5)
-        self.output_layer = nn.Linear(64, num_classes)
+        self.output_layer = nn.Linear(16, num_classes)
 
     def forward(self, input_sequence):
         output = self.conv_layer_1(input_sequence)
@@ -71,12 +73,11 @@ class EEGClassifier1DCNN(nn.Module):
         return predictions
 
 # Trains the 1D CNN model on EEG data and evaluates on a validation split
-def train_eeg_cnn_model(processed_data_dir, num_epochs=60, batch_size=4, learning_rate=0.01):
+def train_eeg_cnn_model(processed_data_dir, num_epochs=20, batch_size=16, learning_rate=0.001):
     dataset = EEGDataset(processed_data_dir)
     num_classes = len(dataset.class_names)
-    input_channels = dataset.samples.shape[1]
+    input_channels = dataset.samples.shape[2]
 
-    # Split into training and validation sets
     validation_size = int(0.2 * len(dataset))
     training_size = len(dataset) - validation_size
     training_set, validation_set = random_split(dataset, [training_size, validation_size])
@@ -89,8 +90,12 @@ def train_eeg_cnn_model(processed_data_dir, num_epochs=60, batch_size=4, learnin
     model.to(device)
 
     loss_function = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-4)
 
+    # For plotting after training
+    train_losses = []
+    val_accuracies = []
+    val_losses = []
     for epoch in range(num_epochs):
         model.train()
         total_epoch_loss = 0
@@ -110,6 +115,7 @@ def train_eeg_cnn_model(processed_data_dir, num_epochs=60, batch_size=4, learnin
         model.eval()
         total_correct = 0
         total_samples = 0
+        val_loss = 0
         predictions_list = []
         targets_list = []
 
@@ -118,16 +124,41 @@ def train_eeg_cnn_model(processed_data_dir, num_epochs=60, batch_size=4, learnin
                 validation_data, validation_labels = validation_data.to(device), validation_labels.to(device)
 
                 validation_logits = model(validation_data)
-                _, predicted_labels = torch.max(validation_logits, 1)
+                loss = loss_function(validation_logits, validation_labels)
+                val_loss += loss.item()
 
+                _, predicted_labels = torch.max(validation_logits, 1)
                 total_samples += validation_labels.size(0)
                 total_correct += (predicted_labels == validation_labels).sum().item()
 
                 predictions_list.extend(predicted_labels.cpu().numpy())
                 targets_list.extend(validation_labels.cpu().numpy())
 
+        
         validation_accuracy = 100 * total_correct / total_samples
+        train_losses.append(total_epoch_loss)
+        val_losses.append(val_loss)
+        val_accuracies.append(validation_accuracy)
+
         print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {total_epoch_loss:.4f}, Val Acc: {validation_accuracy:.2f}%")
+
+    # Plot accuracy and loss after training
+    epochs = list(range(1, num_epochs + 1))
+    fig, ax1 = plt.subplots()
+
+    ax1.set_xlabel('Epoch')
+    ax1.set_ylabel('Training Loss', color='tab:blue')
+    ax1.plot(epochs, train_losses, label='Loss', color='tab:blue')
+    ax1.tick_params(axis='y', labelcolor='tab:blue')
+
+    ax2 = ax1.twinx()
+    ax2.set_ylabel('Validation Accuracy (%)', color='tab:green')
+    ax2.plot(epochs, val_accuracies, label='Accuracy', color='tab:green')
+    ax2.tick_params(axis='y', labelcolor='tab:green')
+
+    plt.title("Training Loss and Validation Accuracy Over Epochs")
+    plt.tight_layout()
+    plt.show()
 
     # Display confusion matrix after final epoch
     confusion_mat = confusion_matrix(targets_list, predictions_list)

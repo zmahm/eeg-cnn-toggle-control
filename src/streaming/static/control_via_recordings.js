@@ -75,36 +75,33 @@ function connectWebSocket() {
   };
 }
 
-function handleAction(action) {
-  if (!ws || ws.readyState !== WebSocket.OPEN) {
-    logToConsole('WebSocket not connected.');
+function handleAction(requestedClass) {
+  if (!selectedModel) {
+    logToConsole("No model selected.");
     return;
   }
 
-  switch (action) {
-    case 'leg_movement':
-      currentServoIndex = (currentServoIndex + 1) % 3;
-      document.getElementById('servo-index').textContent = currentServoIndex;
-      logToConsole(`Switched to servo ${currentServoIndex}`);
-      break;
+  fetch('/classify_sample', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ class_name: requestedClass })
+  })
+    .then(res => res.json())
+    .then(data => {
+      if (data.error) throw new Error(data.error);
 
-    case 'left_hand':
-      sendToggleCommand(currentServoIndex, "towards_min");
-      break;
+      const predicted = data.predicted_class;
+      const actual = data.true_class;
 
-    case 'right_hand':
-      sendToggleCommand(currentServoIndex, "towards_max");
-      break;
+      document.getElementById('current-prediction').textContent = predicted;
+      logToConsole(`Requested '${actual}', model predicted '${predicted}'`);
 
-    case 'both_hands':
-      servo3State = !servo3State;
-      const direction = servo3State ? "towards_max" : "towards_min";
-      sendToggleCommand(3, direction);
-      document.getElementById('servo3-state').textContent = servo3State ? 'max' : 'min';
-      logToConsole(`Toggled Servo 3 to ${servo3State ? 'max' : 'min'}`);
-      break;
-  }
+      // Trigger servo action based on predicted class
+      triggerActionBasedOnPrediction(predicted);
+    })
+    .catch(err => logToConsole('Error during classification: ' + err.message));
 }
+
 
 function sendToggleCommand(servoId, direction = "") {
   const payload = {
@@ -128,4 +125,37 @@ function logToConsole(message) {
   const timestamp = new Date().toLocaleTimeString();
   logArea.textContent += `[${timestamp}] ${message}\n`;
   logArea.scrollTop = logArea.scrollHeight;
+}
+
+function triggerActionBasedOnPrediction(prediction) {
+  switch (prediction) {
+    case 'leg_movement':
+      currentServoIndex = (currentServoIndex + 1) % 3;
+      document.getElementById('servo-index').textContent = currentServoIndex;
+      logToConsole(`Model predicted leg_movement → Switched to servo ${currentServoIndex}`);
+      break;
+
+    case 'left_hand':
+      sendToggleCommand(currentServoIndex, "towards_min");
+      break;
+
+    case 'right_hand':
+      sendToggleCommand(currentServoIndex, "towards_max");
+      break;
+
+    case 'both_hands':
+      servo3State = !servo3State;
+      const direction = servo3State ? "towards_max" : "towards_min";
+      sendToggleCommand(3, direction);
+      document.getElementById('servo3-state').textContent = servo3State ? 'max' : 'min';
+      logToConsole(`Model predicted both_hands → Toggled Servo 3 to ${servo3State ? 'max' : 'min'}`);
+      break;
+
+    case 'rest':
+      logToConsole("Model predicted rest — no action taken.");
+      break;
+
+    default:
+      logToConsole(`Unknown prediction: '${prediction}'`);
+  }
 }

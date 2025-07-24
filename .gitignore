@@ -5,3 +5,4 @@ data/raw/*
 data/model/*
 data/processed/*
 test_output/*
+**/__pycache__/
