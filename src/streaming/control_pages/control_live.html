@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Live EEG Control</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Live EEG Model Control</h1>
+    <div class="description">
+      Select a trained model to begin live EEG classification and optional control of a robotic arm.
+    </div>
+
+    <label for="model-select">Select Model:</label>
+    <select id="model-select">
+      {% for model in model_folders %}
+        <option value="{{ model }}">{{ model }}</option>
+      {% endfor %}
+    </select>
+    <button id="load-model">Start Live Classification</button>
+
+    <div id="status-panel">
+      <p><strong>Selected Model:</strong> <span id="current-model">None</span></p>
+      <p><strong>Current Prediction:</strong> <span id="current-prediction">none</span></p>
+      <p><strong>WebSocket Status:</strong> <span id="ws-status">Not Connected</span></p>
+    </div>
+
+    <div id="console-output" style="margin-top: 30px; text-align: left; background-color: rgba(0,255,0,0.05); padding: 10px; border: 1px solid #0f0; height: 200px; overflow-y: auto; font-size: 0.9em;">
+      <strong>Console Log:</strong>
+      <pre id="log-area"></pre>
+    </div>
+
+    <script src="/static/control_live.js"></script>
+  </div>
+</body>
+</html>

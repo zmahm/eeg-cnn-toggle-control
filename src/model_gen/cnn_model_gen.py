@@ -18,6 +18,7 @@ class EEGDataset(Dataset):
         print("Loaded preprocessed shape:", eeg_data.shape)
         print("Labels shape:", label_strings.shape)
         print("Dtype:", eeg_data.dtype)
+        print(label_strings)
 
         self.samples = torch.tensor(eeg_data, dtype=torch.float32)
 
@@ -52,7 +53,7 @@ class EEGClassifier1DCNN(nn.Module):
         self.max_pool_2 = nn.MaxPool1d(kernel_size=2)
 
         self.global_avg_pool = nn.AdaptiveAvgPool1d(1)  # Collapse time dimension
-        self.dropout = nn.Dropout(0.5)
+        self.dropout = nn.Dropout(0.2)
         self.output_layer = nn.Linear(16, num_classes)
 
     def forward(self, input_sequence):
@@ -66,14 +67,14 @@ class EEGClassifier1DCNN(nn.Module):
         output = self.activation_2(output)
         output = self.max_pool_2(output)
 
-        output = self.global_avg_pool(output)   
-        output = output.squeeze(-1)             
+        output = self.global_avg_pool(output)
+        output = output.squeeze(-1)
         output = self.dropout(output)
         predictions = self.output_layer(output)
         return predictions
 
 # Trains the 1D CNN model on EEG data and evaluates on a validation split
-def train_eeg_cnn_model(processed_data_dir, num_epochs=20, batch_size=16, learning_rate=0.001):
+def train_eeg_cnn_model(processed_data_dir, num_epochs=30, batch_size=32, learning_rate=0.0005):
     dataset = EEGDataset(processed_data_dir)
     num_classes = len(dataset.class_names)
     input_channels = dataset.samples.shape[2]
@@ -96,6 +97,15 @@ def train_eeg_cnn_model(processed_data_dir, num_epochs=20, batch_size=16, learni
     train_losses = []
     val_accuracies = []
     val_losses = []
+
+    # Early stopping config
+    patience = 30
+    best_val_loss = float('inf')
+    best_epoch = -1
+    patience_counter = 0
+    best_model_state = None
+    min_delta = 0.001
+
     for epoch in range(num_epochs):
         model.train()
         total_epoch_loss = 0
@@ -111,11 +121,13 @@ def train_eeg_cnn_model(processed_data_dir, num_epochs=20, batch_size=16, learni
 
             total_epoch_loss += loss.item()
 
+        avg_train_loss = total_epoch_loss / len(training_loader)
+
         # Evaluate model performance on validation data
         model.eval()
         total_correct = 0
         total_samples = 0
-        val_loss = 0
+        total_val_loss = 0
         predictions_list = []
         targets_list = []
 
@@ -124,8 +136,8 @@ def train_eeg_cnn_model(processed_data_dir, num_epochs=20, batch_size=16, learni
                 validation_data, validation_labels = validation_data.to(device), validation_labels.to(device)
 
                 validation_logits = model(validation_data)
-                loss = loss_function(validation_logits, validation_labels)
-                val_loss += loss.item()
+                val_loss = loss_function(validation_logits, validation_labels)
+                total_val_loss += val_loss.item()
 
                 _, predicted_labels = torch.max(validation_logits, 1)
                 total_samples += validation_labels.size(0)
@@ -134,29 +146,53 @@ def train_eeg_cnn_model(processed_data_dir, num_epochs=20, batch_size=16, learni
                 predictions_list.extend(predicted_labels.cpu().numpy())
                 targets_list.extend(validation_labels.cpu().numpy())
 
-        
+        avg_val_loss = total_val_loss / len(validation_loader)
         validation_accuracy = 100 * total_correct / total_samples
-        train_losses.append(total_epoch_loss)
-        val_losses.append(val_loss)
+
+        train_losses.append(avg_train_loss)
+        val_losses.append(avg_val_loss)
         val_accuracies.append(validation_accuracy)
 
-        print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {total_epoch_loss:.4f}, Val Acc: {validation_accuracy:.2f}%")
+        print(f"Epoch {epoch + 1}/{num_epochs}, Avg Train Loss: {avg_train_loss:.4f}, "
+              f"Avg Val Loss: {avg_val_loss:.4f}, Val Acc: {validation_accuracy:.2f}%")
 
-    # Plot accuracy and loss after training
-    epochs = list(range(1, num_epochs + 1))
-    fig, ax1 = plt.subplots()
+        # Check for improvement in validation loss
+        if best_val_loss - avg_val_loss > min_delta:
+            best_val_loss = avg_val_loss
+            best_epoch = epoch + 1
+            best_model_state = model.state_dict()
+            patience_counter = 0
+        else:
+            patience_counter += 1
+            print(f"Validation loss did not improve. Patience: {patience_counter}/{patience}")
+            if patience_counter >= patience:
+                print(f"Early stopping triggered at epoch {epoch + 1}. Best epoch was {best_epoch}.")
+                break
 
-    ax1.set_xlabel('Epoch')
-    ax1.set_ylabel('Training Loss', color='tab:blue')
-    ax1.plot(epochs, train_losses, label='Loss', color='tab:blue')
-    ax1.tick_params(axis='y', labelcolor='tab:blue')
+    # Restore best model before saving
+    if best_model_state:
+        model.load_state_dict(best_model_state)
 
-    ax2 = ax1.twinx()
-    ax2.set_ylabel('Validation Accuracy (%)', color='tab:green')
-    ax2.plot(epochs, val_accuracies, label='Accuracy', color='tab:green')
-    ax2.tick_params(axis='y', labelcolor='tab:green')
+    # Plot loss
+    plt.figure(figsize=(10, 5))
+    plt.plot(train_losses, label='Train Loss')
+    plt.plot(val_losses, label='Validation Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Cross-Entropy Loss')
+    plt.title('Training and Validation Loss')
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
 
-    plt.title("Training Loss and Validation Accuracy Over Epochs")
+    # Plot validation accuracy
+    plt.figure(figsize=(10, 5))
+    plt.plot(val_accuracies, label='Validation Accuracy')
+    plt.xlabel('Epoch')
+    plt.ylabel('Accuracy (%)')
+    plt.title('Validation Accuracy Over Epochs')
+    plt.legend()
+    plt.grid(True)
     plt.tight_layout()
     plt.show()
 
